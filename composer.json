@@ -1,0 +1,37 @@
+{
+    "name":        "highco/slack-error-notifier-bundle",
+    "type":        "symfony-bundle",
+    "description": "This bundle sends a markdown formated message to slack when an error occurs.",
+    "keywords":    ["higco", "error", "notifier", "markdown", "slack", "bundle"],
+    "homepage":    "http://github.com/BLEUROY-HIGHCO/SlackErrorNotifierBundle",
+    "license":     "MIT",
+
+    "authors": [
+        {
+            "name": "Highco Team",
+            "homepage": "https://www.highco.com"
+        },
+        {
+            "name": "Contributors",
+            "homepage": "http://github.com/BLEUROY-HIGHCO/SlackErrorNotifierBundle/contributors"
+        }
+    ],
+
+    "require": {
+        "php":                      ">=5.3.2",
+        "symfony/framework-bundle": "~2.3|~3.1",
+        "symfony/console":          "~2.3|~3.1",
+        "swiftmailer/swiftmailer":  "~5.0"
+    },
+
+    "autoload": {
+        "psr-4": {
+            "Highco\\SlackErrorNotifierBundle\\": ""
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.0.x-dev"
+        }
+    }
+}
