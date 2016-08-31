@@ -1,5 +1,0 @@
-| Key         | Value                        |
-| ----------- | ---------------------------: |
-{% for key in bag.keys|sort %}
-| _{{ key }}_ | {{ bag.get(key)|yaml_dump }} |
-{% endfor %}

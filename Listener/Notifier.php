@@ -2,6 +2,7 @@
 
 namespace Highco\SlackErrorNotifierBundle\Listener;
 
+use Highco\SlackErrorNotifierBundle\Formatter\SlackExceptionFormatterInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
@@ -13,59 +14,158 @@ use Symfony\Component\HttpKernel\Event\GetResponseEvent;
 use Symfony\Component\HttpKernel\Event\GetResponseForExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
-use Symfony\Component\Templating\EngineInterface;
 
 /**
  * Notifier
  */
 class Notifier
 {
+    //<editor-fold desc="Members">
     /**
      * @var LoggerInterface
      */
     private $logger;
 
     /**
-     * @var EngineInterface
+     * @var SlackExceptionFormatterInterface
      */
-    private $templating;
+    private $formatter;
 
     /**
      * @var string
      */
     private $errorsDir;
 
-    private $from;
-    private $to;
+    /**
+     * HTTP request.
+     *
+     * @var Request
+     */
     private $request;
+
+    /**
+     * Slack webhook token.
+     *
+     * @var string
+     */
+    private $webhookToken;
+
+    /**
+     * Handling 404.
+     *
+     * @var bool
+     */
     private $handle404;
+
+    /**
+     * Handling HTTP codes others than 400 and 500.
+     *
+     * @var array
+     */
     private $handleHTTPcodes;
+
+    /**
+     * Ignored classes.
+     *
+     * @var array
+     */
     private $ignoredClasses;
+
+    /**
+     * Ignored php errors.
+     *
+     * @var array
+     */
     private $ignoredPhpErrors;
+
+    /**
+     * Report warnings.
+     *
+     * @var bool
+     */
     private $reportWarnings = false;
+
+    /**
+     * Report warning.
+     *
+     * @var bool
+     */
     private $reportErrors = false;
+
+    /**
+     * Report silent errors.
+     *
+     * @var bool
+     */
     private $reportSilent = false;
+
+    /**
+     * Repeat ignore timeout.
+     *
+     * @var bool
+     */
     private $repeatTimeout = false;
+
+    /**
+     * Ignored ips.
+     *
+     * @var array
+     */
     private $ignoredIPs;
+
+    /**
+     * Ignored agents pattern.
+     *
+     * @var string
+     */
     private $ignoredAgentsPattern;
+
+    /**
+     * Ignored url pattern
+     *
+     * @var string
+     */
     private $ignoredUrlsPattern;
+
+    /**
+     * Executed command.
+     *
+     * @var Command
+     */
     private $command;
+
+    /**
+     * Executed command input.
+     *
+     * @var InputInterface
+     */
     private $commandInput;
 
-    private static $tmpBuffer = null;
+    /**
+     * Memory temp buffer.
+     *
+     * @var string
+     */
+    private static $tmpBuffer;
+    //</editor-fold>
 
     /**
      * The constructor
      *
-     * @param LoggerInterface $logger     logger
-     * @param EngineInterface $templating templating
-     * @param string          $cacheDir   cacheDir
-     * @param array           $config     configure array
+     * @param LoggerInterface                  $logger    Logger.
+     * @param SlackExceptionFormatterInterface $formatter Exception formater.
+     * @param string                           $cacheDir  App cache dir.
+     * @param array                            $config    Bundle config.
+     *
+     * @internal param string $cacheDir cacheDir
      */
-    public function __construct(LoggerInterface $logger, EngineInterface $templating, $cacheDir, $config)
+    public function __construct(LoggerInterface $logger, SlackExceptionFormatterInterface $formatter, $cacheDir, $config)
     {
-        $this->logger               = $logger;
-        $this->templating           = $templating;
+        $this->logger    = $logger;
+        $this->formatter = $formatter;
+
+        //Get config parameters.
+        $this->webhookToken         = $config['webhookToken'];
         $this->handle404            = $config['handle404'];
         $this->handleHTTPcodes      = $config['handleHTTPcodes'];
         $this->reportErrors         = $config['handlePHPErrors'];
@@ -74,15 +174,18 @@ class Notifier
         $this->ignoredClasses       = $config['ignoredClasses'];
         $this->ignoredPhpErrors     = $config['ignoredPhpErrors'];
         $this->repeatTimeout        = $config['repeatTimeout'];
-        $this->errorsDir            = $cacheDir . '/errors';
         $this->ignoredIPs           = $config['ignoredIPs'];
         $this->ignoredAgentsPattern = $config['ignoredAgentsPattern'];
         $this->ignoredUrlsPattern   = $config['ignoredUrlsPattern'];
 
+        $this->errorsDir = $cacheDir . '/errors';
         if (!is_dir($this->errorsDir)) {
+            /** @noinspection MkdirRaceConditionInspection */
             @mkdir($this->errorsDir);
         }
     }
+
+    //<editor-fold desc="Framework events">
 
     /**
      * Handle the event
@@ -96,7 +199,7 @@ class Notifier
         }
 
         $exception = $event->getException();
-
+        $this->formatter->setRequest($event->getRequest());
         if ($exception instanceof HttpException) {
             if (in_array($event->getRequest()->getClientIp(), $this->ignoredIPs, true)) {
                 return;
@@ -112,13 +215,13 @@ class Notifier
 
             if (500 === $exception->getStatusCode()
                 || (404 === $exception->getStatusCode() && true === $this->handle404)
-                || (in_array($exception->getStatusCode(), $this->handleHTTPcodes, true))
+                || in_array($exception->getStatusCode(), $this->handleHTTPcodes, true)
             ) {
-                $this->createMailAndSend($exception, $event->getRequest());
+                $this->createMessageAndLog($exception);
             }
         } else {
             if (in_array(get_class($exception), $this->ignoredClasses, false) === false) {
-                $this->createMailAndSend($exception, $event->getRequest());
+                $this->createMessageAndLog($exception);
             }
         }
     }
@@ -133,7 +236,8 @@ class Notifier
         $exception = $event->getException();
 
         if (in_array(get_class($exception), $this->ignoredClasses, false) === false) {
-            $this->createMailAndSend($exception, null, null, $this->command, $this->commandInput);
+            $this->formatter->setCommand($this->command);
+            $this->createMessageAndLog($exception);
         }
     }
 
@@ -152,6 +256,7 @@ class Notifier
         if ($this->reportErrors || $this->reportWarnings) {
             self::reserveMemory();
 
+            $this->formatter->setRequest($event->getRequest());
             $this->request = $event->getRequest();
 
             $this->setErrorHandlers();
@@ -163,7 +268,7 @@ class Notifier
      */
     public function onConsoleCommand(ConsoleCommandEvent $event)
     {
-        $this->request = null;
+        $this->formatter->setRequest(null);
 
         $this->command      = $event->getCommand();
         $this->commandInput = $event->getInput();
@@ -174,18 +279,23 @@ class Notifier
             $this->setErrorHandlers();
         }
     }
+    //</editor-fold>
 
+    //<editor-fold desc="Error handlers">
+    /**
+     * Set error handlers
+     */
     protected function setErrorHandlers()
     {
         // set_error_handler and register_shutdown_function can be triggered on
         // both warnings and errors
-        set_error_handler([$this, 'handlePhpError'], E_ALL);
+        set_error_handler(array($this, 'handlePhpError'), E_ALL);
 
         // From PHP Documentation: the following error types cannot be handled with
         // a user defined function using set_error_handler: *E_ERROR*, *E_PARSE*, *E_CORE_ERROR*, *E_CORE_WARNING*,
         // *E_COMPILE_ERROR*, *E_COMPILE_WARNING*
         // That is we need to use also register_shutdown_function()
-        register_shutdown_function([$this, 'handlePhpFatalErrorAndWarnings']);
+        register_shutdown_function(array($this, 'handlePhpFatalErrorAndWarnings'));
     }
 
     /**
@@ -202,13 +312,13 @@ class Notifier
     public function handlePhpError($level, $message, $file, $line, $errorContext)
     {
         // don't catch error with error_repoting is 0
-        if (0 === error_reporting() && false === $this->reportSilent) {
+        if (false === $this->reportSilent && 0 === error_reporting()) {
             return false;
         }
 
         // there would be more warning codes but they are not caught by set_error_handler
         // but by register_shutdown_function
-        $warningsCodes = [E_NOTICE, E_USER_WARNING, E_USER_NOTICE, E_STRICT, E_DEPRECATED, E_USER_DEPRECATED];
+        $warningsCodes = array(E_NOTICE, E_USER_WARNING, E_USER_NOTICE, E_STRICT, E_DEPRECATED, E_USER_DEPRECATED);
 
         if (!$this->reportWarnings && in_array($level, $warningsCodes, false)) {
             return false;
@@ -219,8 +329,9 @@ class Notifier
         }
 
         $exception = new \ErrorException(sprintf('%s: %s in %s line %d', $this->getErrorString($level), $message, $file, $line), 0, $level, $file, $line);
+        $this->formatter->setContext($errorContext);
 
-        $this->createMailAndSend($exception, $this->request, $errorContext, $this->command, $this->commandInput);
+        $this->createMessageAndLog($exception);
 
         // in order not to bypass the standard PHP error handler
         return false;
@@ -236,23 +347,23 @@ class Notifier
 
         $lastError = error_get_last();
 
-        if (is_null($lastError)) {
+        if (null === $lastError) {
             return;
         }
 
-        $errors = [];
+        $errors = array();
 
         if ($this->reportErrors) {
-            $errors = array_merge($errors, [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR]);
+            $errors = array_merge($errors, array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR));
         }
 
         if ($this->reportWarnings) {
-            $errors = array_merge($errors, [E_CORE_WARNING, E_COMPILE_WARNING, E_STRICT]);
+            $errors = array_merge($errors, array(E_CORE_WARNING, E_COMPILE_WARNING, E_STRICT));
         }
 
         if (in_array($lastError['type'], $errors, false) && !in_array(@$lastError['message'], $this->ignoredPhpErrors, false)) {
             $exception = new \ErrorException(sprintf('%s: %s in %s line %d', @$this->getErrorString(@$lastError['type']), @$lastError['message'], @$lastError['file'], @$lastError['line']), @$lastError['type'], @$lastError['type'], @$lastError['file'], @$lastError['line']);
-            $this->createMailAndSend($exception, $this->request, null, $this->command, $this->commandInput);
+            $this->createMessageAndLog($exception);
         }
     }
 
@@ -266,7 +377,7 @@ class Notifier
     public function getErrorString($errorNo)
     {
         // may be exhaustive, but not sure
-        $errorStrings = [
+        $errorStrings = array(
             E_WARNING           => 'Warning',
             E_NOTICE            => 'Notice',
             E_USER_ERROR        => 'User Error',
@@ -282,19 +393,18 @@ class Notifier
             E_COMPILE_ERROR     => 'E_COMPILE_ERROR',
             E_CORE_WARNING      => 'E_CORE_WARNING',
             E_COMPILE_WARNING   => 'E_COMPILE_WARNING',
-        ];
+        );
 
         return array_key_exists($errorNo, $errorStrings) ? $errorStrings[$errorNo] : 'UNKNOWN';
     }
+    //</editor-fold>
 
     /**
-     * @param \ErrorException $exception
-     * @param Request         $request
-     * @param array           $context
-     * @param Command         $command
-     * @param InputInterface  $commandInput
+     * Create message and log it.
+     *
+     * @param \Exception $exception Exception throwed.
      */
-    public function createMailAndSend($exception, Request $request = null, $context = null, Command $command = null, InputInterface $commandInput = null)
+    public function createMessageAndLog(\Exception $exception)
     {
         if (!$exception instanceof FlattenException) {
             $exception = FlattenException::create($exception);
@@ -303,39 +413,53 @@ class Notifier
             return;
         }
 
-        $body = $this->templating->render('HighcoSlackErrorNotifierBundle::error.md.twig', [
-            'exception'     => $exception,
-            'request'       => $request,
-            'status_code'   => $exception->getCode(),
-            'context'       => $context,
-            'command'       => $command,
-            'command_input' => $commandInput,
-        ]);
+        $this->postMessage(json_encode($this->formatter->formatException($exception)));
+    }
 
-        if ($this->request) {
-            $subject = '[' . $request->headers->get('host') . '] Error ' . $exception->getStatusCode() . ': ' . $exception->getMessage();
-        } elseif ($this->command) {
-            $subject = '[' . $this->command->getName() . '] Error ' . $exception->getStatusCode() . ': ' . $exception->getMessage();
-        } else {
-            $subject = 'Error ' . $exception->getStatusCode() . ': ' . $exception->getMessage();
+    /**
+     * Post message to slack
+     *
+     * @param string $message Json formatted message.
+     *
+     * @return bool
+     */
+    private function postMessage($message)
+    {
+        $url = sprintf('https://hooks.slack.com/services/%s', $this->webhookToken);
+        if (empty($message)) {
+            return false;
+        }
+        $ch = curl_init();
+        if (!$ch) {
+            $this->logger->error('Failed to create curl handle');
+
+            return false;
+        }
+        curl_setopt($ch, CURLOPT_HEADER, 0);
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+                'Content-Type: application/json',
+                'Content-Length: ' . strlen($message),
+            )
+        );
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $message);
+        $response       = curl_exec($ch);
+        $httpStatusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        if ($httpStatusCode !== 200) {
+            $this->logger->error('Failed to post to slack: status ' . $httpStatusCode . ' | response : ' . $response);
+
+            return false;
+        }
+        if ($response !== 'ok') {
+            $this->logger->error('Didn\'t get an "ok" back from slack, got: ' . $response);
+
+            return false;
         }
 
-        if (function_exists('mb_substr')) {
-            $subject = mb_substr($subject, 0, 255);
-        } else {
-            $subject = substr($subject, 0, 255);
-        }
-
-        $this->logger->error($subject, ['exception' => $body]);
-
-        $mail = \Swift_Message::newInstance()
-            ->setSubject($subject)
-            ->setFrom($this->from)
-            ->setTo($this->to)
-            ->setContentType('text/html')
-            ->setBody($body);
-
-        $this->logger->send($mail);
+        return true;
     }
 
     /**

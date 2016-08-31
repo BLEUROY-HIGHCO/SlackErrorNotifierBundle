@@ -38,12 +38,24 @@ Add in your `config_prod.yml` file, you don't need error notifier when you are i
 ```yml
 # app/config/config_prod.yml
 highco_slack_error_notifier:
+    channel: symfony-errors # Required : Slack channel 
+    webhookToken: XXXXXXX/XXXXXXX/XXXXX # Required : string https://hooks.slack.com/services/ in your slack webhook url
     handle404: true # default :  false
     handleHTTPcodes: ~
     handlePHPErrors: true # catch fatal erros and log them
     handlePHPWarnings: true # catch warnings and log them
     handleSilentErrors: false # don't catch error on method with an @
     ignoredClasses: ~
+    formatter:
+        firstClassLinesBeforeAfter: 3 # Lines displayed around error in first class in full trace
+        firstClassLinesBeforeAfter: 0 # Lines displayed around error in following classes in full trace
+        includeGetParameters: true # Display GET parameters
+        includePostParameters: true # Display POST parameters
+        includeRequestAttributes: true # Display request attributes
+        includeRequestCookies: true # Display request cookies
+        includeRequestHeaders: false # Display request headers
+        includeServerParameters: false # Display server parameters
+        includeSessionAttributes: true # Display session attributes
 ```
 
 
@@ -84,32 +96,6 @@ highco_slack_error_notifier:
 ```
 
 In this example, if an errors X occurs, and the same error X occurs again within 1 hour, you won't recieve a 2nd log.
-
-## Twig Extension
-
-There are also some extensions that you can use in your Twig templates (thanks to [Goutte](https://github.com/Goutte)).
-
-Extends Twig with:
-
-```twig
-{{ "my string, whatever" | pre }}  --> wraps with <pre>
-{{ myBigVar | yaml_dump | pre }} as {{ myBigVar | ydump }} or {{ myBigVar | dumpy }}
-{{ myBigVar | var_dump | pre }}  as {{ myBigVar | dump }}
-
-You may control the depth of recursion with a parameter, say foo = array('a'=>array('b'=>array('c','d')))
-
-{{ foo | dumpy(0) }} --> 'array of 1'
-{{ foo | dumpy(2) }} -->
-                           a:
-                             b: 'array of 2'
-{{ foo | dumpy(3) }} -->
-                           a:
-                             b:
-                               - c
-                               - d
-```
-
-Default value is 1 (MAX_DEPTH const).
 
 ### How to ignore sending HTTP errors if request comes from any of given IPs?
 
