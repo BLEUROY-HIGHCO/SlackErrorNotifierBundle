@@ -39,7 +39,7 @@ Add in your `config_prod.yml` file, you don't need error notifier when you are i
 # app/config/config_prod.yml
 highco_slack_error_notifier:
     channel: symfony-errors # Required : Slack channel 
-    webhookToken: XXXXXXX/XXXXXXX/XXXXX # Required : string https://hooks.slack.com/services/ in your slack webhook url
+    token: XXXXXXXXXXXXXXXXXXX # Required : Slack api token
     handle404: true # default :  false
     handleHTTPcodes: ~
     handlePHPErrors: true # catch fatal erros and log them

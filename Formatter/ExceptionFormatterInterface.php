@@ -7,7 +7,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Debug\Exception\FlattenException;
 use Symfony\Component\HttpFoundation\Request;
 
-interface SlackExceptionFormatterInterface
+interface ExceptionFormatterInterface
 {
     /**
      * Format Exception.

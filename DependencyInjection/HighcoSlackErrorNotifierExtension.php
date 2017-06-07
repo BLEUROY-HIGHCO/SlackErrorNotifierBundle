@@ -18,6 +18,8 @@ class HighcoSlackErrorNotifierExtension extends Extension
      *
      * @param array            $configs   configs
      * @param ContainerBuilder $container container
+     *
+     * @throws \Exception
      */
     public function load(array $configs, ContainerBuilder $container)
     {

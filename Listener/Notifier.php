@@ -2,7 +2,7 @@
 
 namespace Highco\SlackErrorNotifierBundle\Listener;
 
-use Highco\SlackErrorNotifierBundle\Formatter\SlackExceptionFormatterInterface;
+use Highco\SlackErrorNotifierBundle\Formatter\ExceptionFormatterInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Event\ConsoleCommandEvent;
@@ -27,7 +27,7 @@ class Notifier
     private $logger;
 
     /**
-     * @var SlackExceptionFormatterInterface
+     * @var ExceptionFormatterInterface
      */
     private $formatter;
 
@@ -48,7 +48,7 @@ class Notifier
      *
      * @var string
      */
-    private $webhookToken;
+    private $token;
 
     /**
      * Handling 404.
@@ -62,7 +62,7 @@ class Notifier
      *
      * @var array
      */
-    private $handleHTTPcodes;
+    private $handleHTTPCodes;
 
     /**
      * Ignored classes.
@@ -152,22 +152,22 @@ class Notifier
     /**
      * The constructor
      *
-     * @param LoggerInterface                  $logger    Logger.
-     * @param SlackExceptionFormatterInterface $formatter Exception formater.
-     * @param string                           $cacheDir  App cache dir.
-     * @param array                            $config    Bundle config.
+     * @param LoggerInterface             $logger    Logger.
+     * @param ExceptionFormatterInterface $formatter Exception formater.
+     * @param string                      $cacheDir  App cache dir.
+     * @param array                       $config    Bundle config.
      *
      * @internal param string $cacheDir cacheDir
      */
-    public function __construct(LoggerInterface $logger, SlackExceptionFormatterInterface $formatter, $cacheDir, $config)
+    public function __construct(LoggerInterface $logger, ExceptionFormatterInterface $formatter, $cacheDir, $config)
     {
         $this->logger    = $logger;
         $this->formatter = $formatter;
 
         //Get config parameters.
-        $this->webhookToken         = $config['webhookToken'];
+        $this->token                = $config['token'];
         $this->handle404            = $config['handle404'];
-        $this->handleHTTPcodes      = $config['handleHTTPcodes'];
+        $this->handleHTTPCodes      = $config['handleHTTPcodes'];
         $this->reportErrors         = $config['handlePHPErrors'];
         $this->reportWarnings       = $config['handlePHPWarnings'];
         $this->reportSilent         = $config['handleSilentErrors'];
@@ -215,7 +215,7 @@ class Notifier
 
             if (500 === $exception->getStatusCode()
                 || (404 === $exception->getStatusCode() && true === $this->handle404)
-                || in_array($exception->getStatusCode(), $this->handleHTTPcodes, true)
+                || in_array($exception->getStatusCode(), $this->handleHTTPCodes, true)
             ) {
                 $this->createMessageAndLog($exception);
             }
@@ -287,14 +287,8 @@ class Notifier
      */
     protected function setErrorHandlers()
     {
-        // set_error_handler and register_shutdown_function can be triggered on
-        // both warnings and errors
         set_error_handler(array($this, 'handlePhpError'), E_ALL);
 
-        // From PHP Documentation: the following error types cannot be handled with
-        // a user defined function using set_error_handler: *E_ERROR*, *E_PARSE*, *E_CORE_ERROR*, *E_CORE_WARNING*,
-        // *E_COMPILE_ERROR*, *E_COMPILE_WARNING*
-        // That is we need to use also register_shutdown_function()
         register_shutdown_function(array($this, 'handlePhpFatalErrorAndWarnings'));
     }
 
@@ -425,7 +419,7 @@ class Notifier
      */
     private function postMessage($message)
     {
-        $url = sprintf('https://hooks.slack.com/services/%s', $this->webhookToken);
+        $url = sprintf('https://hooks.slack.com/services/%s', $this->token);
         if (empty($message)) {
             return false;
         }

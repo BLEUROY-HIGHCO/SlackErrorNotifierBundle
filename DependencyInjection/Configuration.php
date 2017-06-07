@@ -38,7 +38,7 @@ class Configuration implements ConfigurationInterface
                     ->isRequired()
                     ->cannotBeEmpty()
                 ->end()
-                ->scalarNode('webhookToken')
+                ->scalarNode('token')
                     ->isRequired()
                     ->cannotBeEmpty()
                 ->end()
